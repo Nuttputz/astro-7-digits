@@ -139,7 +139,7 @@ def calculate_7_base(day_num, month_num, year_num, solar_date):
     return chart_data, age_vals
 
 # ==========================================
-# 3. ฟังก์ชันวาด PDF
+# 3. ฟังก์ชันวาด PDF (จัด Layout นำดวงจรมาแทรก)
 # ==========================================
 def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, month_num):
     buffer = io.BytesIO()
@@ -154,24 +154,26 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
         name += " (Font THSarabunNew.ttf not found)"
 
     c.setFillColorRGB(0, 0, 0)
-    c.drawString(50, 795, f"ชื่อ-นามสกุล: {name}")
+    c.drawString(50, 800, f"ชื่อ-นามสกุล: {name}")
     c.setFont("THSarabun", 24)
-    c.drawString(50, 765, f"วัน-เดือน-ปีเกิด: {dob_text}")
-    c.drawString(50, 735, f"จันทรคติ: {thai_lunar_date}")
+    c.drawString(50, 775, f"วัน-เดือน-ปีเกิด: {dob_text}")
+    c.drawString(50, 750, f"จันทรคติ: {thai_lunar_date}")
     
-    col_width = 50 
-    row_height = 32
-    start_x = 120 
-    start_y = 670
+    col_width = 45 
+    row_height = 25
+    start_x = 140 
     
-    for row_idx, row in enumerate(chart_data):
-        display_row_idx = row_idx if row_idx < 5 else row_idx + 1
-        y_pos = start_y - (display_row_idx * row_height)
+    # === 1. ตารางที่ 1 (เฉพาะท่อนบน แถว 1 ถึง 5) ===
+    start_y_part1 = 710
+    
+    for row_idx in range(5):
+        row = chart_data[row_idx]
+        y_pos = start_y_part1 - (row_idx * row_height)
         
         for col_idx, value in enumerate(row):
             x = start_x + (col_idx * col_width)
             
-            if row_idx < 5 and col_idx == 3:
+            if col_idx == 3:
                 c.setFillColorRGB(0.85, 0.93, 1.0) 
                 c.rect(x, y_pos, col_width, row_height, stroke=1, fill=1)
             else:
@@ -179,50 +181,25 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
                 c.rect(x, y_pos, col_width, row_height)
             
             c.setFillColorRGB(0, 0, 0) 
-            c.setFont("THSarabun", 26) 
-            c.drawCentredString(x + col_width / 2.0, y_pos + 10, str(value))
+            c.setFont("THSarabun", 22) 
+            c.drawCentredString(x + col_width / 2.0, y_pos + 6, str(value))
             
             small_num = None
             if row_idx == 0: small_num = 1 + col_idx
             elif row_idx == 1: small_num = 8 + col_idx
             elif row_idx == 2: small_num = 15 + col_idx
-            elif row_idx >= 5: small_num = 22 + ((row_idx - 5) * 7) + col_idx
                 
             if small_num is not None:
-                c.setFont("THSarabun", 14) 
-                c.drawString(x + col_width - 16, y_pos + 3, str(small_num))
+                c.setFont("THSarabun", 12) 
+                c.drawString(x + col_width - 13, y_pos + 2, str(small_num))
 
+    # เส้นหนาระหว่างแถว 3 และ 4 ของตารางแรก
     c.setLineWidth(3)
-    thick_line_y = start_y - (2 * row_height) 
+    thick_line_y = start_y_part1 - (2 * row_height) 
     c.line(start_x, thick_line_y, start_x + (7 * col_width), thick_line_y)
     c.setLineWidth(1)
 
-    age_start_x = 45
-    age_start_y = 230
-    age_row_height = 19
-    main_col_width = 35
-    small_col_width = 22
-    
-    for i in range(12):
-        y = age_start_y - (i * age_row_height)
-        c.setStrokeColorRGB(0, 0, 0)
-        c.rect(age_start_x, y, main_col_width, age_row_height)
-        c.setFillColorRGB(0, 0, 1)
-        c.setFont("THSarabun", 22) 
-        c.drawCentredString(age_start_x + main_col_width / 2.0, y + 5, str(age_vals[i]))
-        
-        for j in range(6):
-            sx = age_start_x + main_col_width + (j * small_col_width)
-            c.setStrokeColorRGB(0.7, 0.7, 0.7)
-            c.rect(sx, y, small_col_width, age_row_height)
-            age_num = (i + 1) + (j * 12)
-            c.setFillColorRGB(0.4, 0.4, 0.4)
-            c.setFont("THSarabun", 16) 
-            c.drawCentredString(sx + small_col_width / 2.0, y + 5, str(age_num))
-            
-    c.setStrokeColorRGB(0, 0, 0)
-    c.setFillColorRGB(0, 0, 0)
-
+    # --- คำนวณตัวเลขสำหรับตารางดวงจร ---
     start1 = 1
     if 1 <= age <= 7: start1 = chart_data[0][age - 1]
     elif 8 <= age <= 14: start1 = chart_data[1][age - 8]
@@ -242,43 +219,90 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
 
-    chart2_x = 255
-    chart2_y = 221
-    cw = 40
-    rh = 28
-
-    c.setFont("THSarabun", 24)
-    c.drawCentredString(chart2_x + (cw * 3.5), chart2_y + 45, f"ตอนนี้อายุ    {age} ปี")
-
-    table_top = chart2_y + 28
-    table_bottom = table_top - 4 * rh
-    table_left = chart2_x
-    table_right = chart2_x + 7 * cw
+    # === 2. ตารางดวงจร (แทรกกลาง ระหว่างแถว 5 กับ 6) ===
+    pred_title_y = 560
+    pred_chart_y = 530
     
+    c.setFont("THSarabun", 24)
+    c.drawCentredString(start_x + (col_width * 3.5), pred_title_y, f"ตอนนี้อายุ    {age} ปี")
+
+    table_top = pred_chart_y + row_height
+    table_bottom = table_top - 4 * row_height
+    table_left = start_x
+    table_right = start_x + 7 * col_width
+    
+    # เส้นกริด
     c.setStrokeColorRGB(0.85, 0.85, 0.85)
     c.setLineWidth(1)
     for i in range(5):
-        y = table_top - i * rh
+        y = table_top - i * row_height
         c.line(table_left, y, table_right, y)
     for i in range(8):
-        x = table_left + i * cw
+        x = table_left + i * col_width
         c.line(x, table_top, x, table_bottom)
 
+    # เส้นหนาสีดำ แบ่งระหว่างแถว 2 (เลขดวง) และ แถว 3 (เดือน) ของดวงจร
     c.setStrokeColorRGB(0, 0, 0)
     c.setLineWidth(3)
-    thick_y = table_top - 2 * rh
+    thick_y = table_top - 2 * row_height
     c.line(table_left, thick_y, table_right, thick_y)
     c.setLineWidth(1)
 
     def draw_centered_large(canvas, text, x, y, color):
         canvas.setFillColorRGB(*color)
-        canvas.drawCentredString(x + cw/2.0, y + 8, text)
+        canvas.drawCentredString(x + col_width/2.0, y + 6, text)
 
-    c.setFont("THSarabun", 26) 
-    for i, val in enumerate(seq1): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y, (0, 0, 1) if i == 0 else (0, 0, 0))
-    for i, val in enumerate(seq2): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y - rh, (0, 0, 1) if i == 0 else (0, 0, 0))
-    for i, val in enumerate(seq3): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y - 2 * rh, (0, 0, 1) if i == 0 else (0, 0, 0))
-    for i, val in enumerate(seq4): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y - 3 * rh, (0, 0, 0))
+    c.setFont("THSarabun", 22) 
+    for i, val in enumerate(seq1): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y, (0, 0, 1) if i == 0 else (0, 0, 0))
+    for i, val in enumerate(seq2): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y - row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
+    for i, val in enumerate(seq3): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y - 2 * row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
+    for i, val in enumerate(seq4): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y - 3 * row_height, (0, 0, 0))
+
+    # === 3. ตารางที่ 1 (ท่อนล่าง แถว 6 ถึง 12) ===
+    start_y_part2 = 405
+    for row_idx in range(5, len(chart_data)):
+        row = chart_data[row_idx]
+        display_idx = row_idx - 5
+        y_pos = start_y_part2 - (display_idx * row_height)
+        
+        for col_idx, value in enumerate(row):
+            x = start_x + (col_idx * col_width)
+            
+            c.setStrokeColorRGB(0, 0, 0)
+            c.rect(x, y_pos, col_width, row_height)
+            
+            c.setFillColorRGB(0, 0, 0) 
+            c.setFont("THSarabun", 22) 
+            c.drawCentredString(x + col_width / 2.0, y_pos + 6, str(value))
+            
+            # เลขดวงเล็กมุมขวาล่าง
+            small_num = 22 + (display_idx * 7) + col_idx
+            c.setFont("THSarabun", 12) 
+            c.drawString(x + col_width - 13, y_pos + 2, str(small_num))
+
+    # === 4. ตารางอายุ (อยู่ล่างสุด) ===
+    age_start_x = 214
+    age_start_y = 205
+    age_row_height = 16
+    main_col_width = 35
+    small_col_width = 22
+    
+    for i in range(12):
+        y = age_start_y - (i * age_row_height)
+        c.setStrokeColorRGB(0, 0, 0)
+        c.rect(age_start_x, y, main_col_width, age_row_height)
+        c.setFillColorRGB(0, 0, 1)
+        c.setFont("THSarabun", 20) 
+        c.drawCentredString(age_start_x + main_col_width / 2.0, y + 4, str(age_vals[i]))
+        
+        for j in range(6):
+            sx = age_start_x + main_col_width + (j * small_col_width)
+            c.setStrokeColorRGB(0.7, 0.7, 0.7)
+            c.rect(sx, y, small_col_width, age_row_height)
+            age_num = (i + 1) + (j * 12)
+            c.setFillColorRGB(0.4, 0.4, 0.4)
+            c.setFont("THSarabun", 14) 
+            c.drawCentredString(sx + small_col_width / 2.0, y + 4, str(age_num))
 
     c.setFillColorRGB(0, 0, 0)
     c.setFont("THSarabun", 16)
@@ -301,29 +325,30 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     html_str = """
     <style>
     .preview-container { background: #fafafa; padding: 25px; border-radius: 12px; margin: 20px 0; color: black; font-family: 'Sarabun', sans-serif; box-shadow: 0px 4px 10px rgba(0,0,0,0.1); }
-    .astro-table { margin: 0 auto 30px auto; border-collapse: collapse; }
+    .astro-table { margin: 0 auto 0 auto; border-collapse: collapse; }
     .astro-table td { position: relative; width: 45px; height: 45px; text-align: center; vertical-align: middle; font-size: 22px; border: 1px solid #333; background: #fff; color: #000; }
     .astro-col-highlight { background: #d9edf7 !important; } 
     .astro-small { position: absolute; bottom: 2px; right: 4px; font-size: 11px; color: #666; }
     
-    /* แก้ไข flex-wrap: nowrap เพื่อบังคับให้ตารางอยู่ข้างกันเสมอ ไม่ว่าจะดูจากหน้าจอไหน */
-    .bottom-tables { display: flex; justify-content: center; flex-wrap: nowrap; gap: 30px; align-items: flex-start; margin-top: 10px; overflow-x: auto; }
+    .tables-wrapper { display: flex; flex-direction: column; align-items: center; gap: 25px; margin-top: 10px; }
     
-    .age-table { border-collapse: collapse; }
+    .age-table { border-collapse: collapse; margin: 0 auto; }
     .age-table td { border: 1px solid #ccc; width: 25px; height: 25px; text-align: center; font-size: 13px; background: #fff; color: #555; }
     .age-main { border: 1px solid #333 !important; color: blue !important; font-weight: bold; width: 32px !important; font-size: 16px !important; }
+    
     .pred-table { border-collapse: collapse; margin: 0 auto; background: #fff;}
     .pred-table td { border: 1px solid #e0e0e0; padding: 6px 14px; text-align: center; font-size: 22px; color: #000; width: 45px; height: 40px;}
     .pred-blue { color: blue !important; }
     .pred-border-b td { border-bottom: 3px solid #000 !important; } 
     </style>
     <div class="preview-container"><h3 style="text-align: center; color: #333; margin-bottom: 25px;">📄 แผ่นดวงชะตา</h3>
+    <div class="tables-wrapper">
     """
     
+    # --- 1. ตารางที่ 1 (ท่อนบน แถว 1 ถึง 5) ---
     html_str += "<table class='astro-table'>"
-    for row_idx, row in enumerate(chart_data):
-        if row_idx == 5: html_str += "<tr style='height: 15px;'><td colspan='7' style='border: none; background: transparent;'></td></tr>"
-            
+    for row_idx in range(5):
+        row = chart_data[row_idx]
         tr_style = " style='border-bottom: 3px solid #000;'" if row_idx == 2 else ""
         html_str += f"<tr{tr_style}>"
         
@@ -332,15 +357,15 @@ def render_html_preview(chart_data, age_vals, age, month_num):
             if row_idx == 0: small_num = 1 + col_idx
             elif row_idx == 1: small_num = 8 + col_idx
             elif row_idx == 2: small_num = 15 + col_idx
-            elif row_idx >= 5: small_num = 22 + ((row_idx - 5) * 7) + col_idx
             
-            highlight_class = " astro-col-highlight" if (row_idx < 5 and col_idx == 3) else ""
+            highlight_class = " astro-col-highlight" if col_idx == 3 else ""
             td_style = " style='border-bottom: 3px solid #000;'" if row_idx == 2 else ""
             
             html_str += f"<td class='{highlight_class.strip()}'{td_style}>{val}<span class='astro-small'>{small_num if small_num else ''}</span></td>"
         html_str += "</tr>"
     html_str += "</table>"
     
+    # --- คำนวณดวงจร ---
     start1 = 1
     if 1 <= age <= 7: start1 = chart_data[0][age - 1]
     elif 8 <= age <= 14: start1 = chart_data[1][age - 8]
@@ -359,13 +384,7 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
     
-    html_str += "<div class='bottom-tables'><div><table class='age-table'>"
-    for i in range(12):
-        html_str += f"<tr><td class='age-main'>{age_vals[i]}</td>"
-        for j in range(6): html_str += f"<td>{(i + 1) + (j * 12)}</td>"
-        html_str += "</tr>"
-    html_str += "</table></div>"
-    
+    # --- 2. ตารางดวงจร (แทรกกลาง) ---
     html_str += f"<div><div style='text-align: center; margin-bottom: 10px; font-size: 18px; font-weight: bold; color: #000;'>ตอนนี้อายุ {age} ปี</div><table class='pred-table'>"
     for r_idx, seq in enumerate([seq1, seq2, seq3, seq4]):
         row_class = "pred-border-b" if r_idx == 1 else ""
@@ -376,7 +395,29 @@ def render_html_preview(chart_data, age_vals, age, month_num):
             if c_idx == 0 and r_idx < 3: cls.append("pred-blue")
             html_str += f"<td class='{' '.join(cls)}'>{val}</td>"
         html_str += "</tr>"
-    html_str += "</table></div></div></div>"
+    html_str += "</table></div>"
+    
+    # --- 3. ตารางที่ 1 (ท่อนล่าง แถว 6 ถึง 12) ---
+    html_str += "<table class='astro-table'>"
+    for row_idx in range(5, len(chart_data)):
+        row = chart_data[row_idx]
+        html_str += "<tr>"
+        
+        for col_idx, val in enumerate(row):
+            small_num = 22 + ((row_idx - 5) * 7) + col_idx
+            html_str += f"<td>{val}<span class='astro-small'>{small_num}</span></td>"
+        html_str += "</tr>"
+    html_str += "</table>"
+    
+    # --- 4. ตารางอายุ (อยู่ล่างสุด) ---
+    html_str += "<div><table class='age-table'>"
+    for i in range(12):
+        html_str += f"<tr><td class='age-main'>{age_vals[i]}</td>"
+        for j in range(6): html_str += f"<td>{(i + 1) + (j * 12)}</td>"
+        html_str += "</tr>"
+    html_str += "</table></div>"
+    
+    html_str += "</div></div>"
     
     st.markdown(html_str, unsafe_allow_html=True)
 
