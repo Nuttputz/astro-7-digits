@@ -22,18 +22,20 @@ def init_db():
             s_day INTEGER,
             s_month INTEGER,
             s_year_be INTEGER,
+            e_day_num INTEGER DEFAULT 1,
+            e_month_num INTEGER DEFAULT 1,
+            e_year_num INTEGER DEFAULT 1,
             age INTEGER,
             thai_lunar_text TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # อัปเกรดฐานข้อมูล: เพิ่มคอลัมน์เก็บตัวแปรดวงจันทรคติ (เผื่อสำหรับคนที่มีไฟล์ .db เดิมอยู่แล้วจะได้ไม่ Error)
     try:
         c.execute('ALTER TABLE users ADD COLUMN e_day_num INTEGER DEFAULT 1')
         c.execute('ALTER TABLE users ADD COLUMN e_month_num INTEGER DEFAULT 1')
         c.execute('ALTER TABLE users ADD COLUMN e_year_num INTEGER DEFAULT 1')
     except sqlite3.OperationalError:
-        pass # ถ้ามีคอลัมน์อยู่แล้วให้ข้ามไป
+        pass 
         
     conn.commit()
     conn.close()
@@ -165,10 +167,18 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     for row_idx, row in enumerate(chart_data):
         display_row_idx = row_idx if row_idx < 5 else row_idx + 1
         y_pos = start_y - (display_row_idx * row_height)
+        
         for col_idx, value in enumerate(row):
             x = start_x + (col_idx * col_width)
-            c.setStrokeColorRGB(0, 0, 0)
-            c.rect(x, y_pos, col_width, row_height)
+            
+            if row_idx < 5 and col_idx == 3:
+                c.setFillColorRGB(0.85, 0.93, 1.0) 
+                c.rect(x, y_pos, col_width, row_height, stroke=1, fill=1)
+            else:
+                c.setStrokeColorRGB(0, 0, 0)
+                c.rect(x, y_pos, col_width, row_height)
+            
+            c.setFillColorRGB(0, 0, 0) 
             c.setFont("THSarabun", 26) 
             c.drawCentredString(x + col_width / 2.0, y_pos + 10, str(value))
             
@@ -187,8 +197,8 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     c.line(start_x, thick_line_y, start_x + (7 * col_width), thick_line_y)
     c.setLineWidth(1)
 
-    age_start_x = 40
-    age_start_y = 255
+    age_start_x = 45
+    age_start_y = 230
     age_row_height = 19
     main_col_width = 35
     small_col_width = 22
@@ -232,33 +242,43 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
 
-    chart2_x = 270
-    chart2_y = 215
+    chart2_x = 255
+    chart2_y = 221
     cw = 40
     rh = 28
 
     c.setFont("THSarabun", 24)
-    c.drawCentredString(chart2_x + (cw * 3.5), chart2_y + 30, f"ตอนนี้อายุ    {age} ปี")
+    c.drawCentredString(chart2_x + (cw * 3.5), chart2_y + 45, f"ตอนนี้อายุ    {age} ปี")
+
+    table_top = chart2_y + 28
+    table_bottom = table_top - 4 * rh
+    table_left = chart2_x
+    table_right = chart2_x + 7 * cw
+    
+    c.setStrokeColorRGB(0.85, 0.85, 0.85)
+    c.setLineWidth(1)
+    for i in range(5):
+        y = table_top - i * rh
+        c.line(table_left, y, table_right, y)
+    for i in range(8):
+        x = table_left + i * cw
+        c.line(x, table_top, x, table_bottom)
+
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setLineWidth(3)
+    thick_y = table_top - 2 * rh
+    c.line(table_left, thick_y, table_right, thick_y)
+    c.setLineWidth(1)
 
     def draw_centered_large(canvas, text, x, y, color):
         canvas.setFillColorRGB(*color)
-        canvas.drawCentredString(x + cw/2.0, y + 5, text)
+        canvas.drawCentredString(x + cw/2.0, y + 8, text)
 
     c.setFont("THSarabun", 26) 
     for i, val in enumerate(seq1): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y, (0, 0, 1) if i == 0 else (0, 0, 0))
     for i, val in enumerate(seq2): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y - rh, (0, 0, 1) if i == 0 else (0, 0, 0))
     for i, val in enumerate(seq3): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y - 2 * rh, (0, 0, 1) if i == 0 else (0, 0, 0))
     for i, val in enumerate(seq4): draw_centered_large(c, str(val), chart2_x + i * cw, chart2_y - 3 * rh, (0, 0, 0))
-
-    c.setLineWidth(2)
-    line_y = chart2_y - rh - 2
-    c.line(chart2_x, line_y, chart2_x + 7 * cw, line_y)
-    c.setLineWidth(1)
-    c.setDash(2, 2)
-    for i in range(1, 7):
-        lx = chart2_x + i * cw
-        c.line(lx, chart2_y + 25, lx, chart2_y - 3 * rh + 5)
-    c.setDash(1, 0)
 
     c.setFillColorRGB(0, 0, 0)
     c.setFont("THSarabun", 16)
@@ -283,16 +303,19 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     .preview-container { background: #fafafa; padding: 25px; border-radius: 12px; margin: 20px 0; color: black; font-family: 'Sarabun', sans-serif; box-shadow: 0px 4px 10px rgba(0,0,0,0.1); }
     .astro-table { margin: 0 auto 30px auto; border-collapse: collapse; }
     .astro-table td { position: relative; width: 45px; height: 45px; text-align: center; vertical-align: middle; font-size: 22px; border: 1px solid #333; background: #fff; color: #000; }
+    .astro-col-highlight { background: #d9edf7 !important; } 
     .astro-small { position: absolute; bottom: 2px; right: 4px; font-size: 11px; color: #666; }
-    .bottom-tables { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+    
+    /* แก้ไข flex-wrap: nowrap เพื่อบังคับให้ตารางอยู่ข้างกันเสมอ ไม่ว่าจะดูจากหน้าจอไหน */
+    .bottom-tables { display: flex; justify-content: center; flex-wrap: nowrap; gap: 30px; align-items: flex-start; margin-top: 10px; overflow-x: auto; }
+    
     .age-table { border-collapse: collapse; }
     .age-table td { border: 1px solid #ccc; width: 25px; height: 25px; text-align: center; font-size: 13px; background: #fff; color: #555; }
     .age-main { border: 1px solid #333 !important; color: blue !important; font-weight: bold; width: 32px !important; font-size: 16px !important; }
-    .pred-table { border-collapse: collapse; margin: 0 auto; }
-    .pred-table td { padding: 6px 14px; text-align: center; font-size: 20px; color: #000; }
+    .pred-table { border-collapse: collapse; margin: 0 auto; background: #fff;}
+    .pred-table td { border: 1px solid #e0e0e0; padding: 6px 14px; text-align: center; font-size: 22px; color: #000; width: 45px; height: 40px;}
     .pred-blue { color: blue !important; }
-    .pred-border-b { border-bottom: 2px solid #333; }
-    .pred-border-r { border-right: 1px dashed #999; }
+    .pred-border-b td { border-bottom: 3px solid #000 !important; } 
     </style>
     <div class="preview-container"><h3 style="text-align: center; color: #333; margin-bottom: 25px;">📄 แผ่นดวงชะตา</h3>
     """
@@ -311,8 +334,10 @@ def render_html_preview(chart_data, age_vals, age, month_num):
             elif row_idx == 2: small_num = 15 + col_idx
             elif row_idx >= 5: small_num = 22 + ((row_idx - 5) * 7) + col_idx
             
+            highlight_class = " astro-col-highlight" if (row_idx < 5 and col_idx == 3) else ""
             td_style = " style='border-bottom: 3px solid #000;'" if row_idx == 2 else ""
-            html_str += f"<td{td_style}>{val}<span class='astro-small'>{small_num if small_num else ''}</span></td>"
+            
+            html_str += f"<td class='{highlight_class.strip()}'{td_style}>{val}<span class='astro-small'>{small_num if small_num else ''}</span></td>"
         html_str += "</tr>"
     html_str += "</table>"
     
@@ -343,13 +368,12 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     
     html_str += f"<div><div style='text-align: center; margin-bottom: 10px; font-size: 18px; font-weight: bold; color: #000;'>ตอนนี้อายุ {age} ปี</div><table class='pred-table'>"
     for r_idx, seq in enumerate([seq1, seq2, seq3, seq4]):
-        html_str += "<tr>"
+        row_class = "pred-border-b" if r_idx == 1 else ""
+        html_str += f"<tr class='{row_class}'>"
         for c_idx in range(7):
             val = seq[c_idx] if c_idx < len(seq) else ""
             cls = []
             if c_idx == 0 and r_idx < 3: cls.append("pred-blue")
-            if r_idx == 1: cls.append("pred-border-b")
-            if c_idx < 6: cls.append("pred-border-r")
             html_str += f"<td class='{' '.join(cls)}'>{val}</td>"
         html_str += "</tr>"
     html_str += "</table></div></div></div>"
@@ -443,7 +467,9 @@ def main():
                 
                 render_html_preview(chart_data, age_vals, age, e_month_num)
                 
-                dob_text = f"วันที่ {s_day} {s_month_name} พ.ศ. {s_year_be}"
+                solar_months_list = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+                s_month_str = solar_months_list[s_month - 1]
+                dob_text = f"วันที่ {s_day} {s_month_str} พ.ศ. {s_year_be}"
                 pdf_buffer = generate_pdf(name, dob_text, display_thai_text, chart_data, age_vals, age, e_month_num)
 
                 st.download_button(
@@ -461,13 +487,12 @@ def main():
         if df.empty:
             st.info("ยังไม่มีข้อมูลลูกค้าในระบบ")
         else:
-            # ตัดเฉพาะคอลัมน์ที่จำเป็นมาโชว์ในตาราง
             display_df = df[['id', 'name', 'age', 'thai_lunar_text', 'created_at']].copy()
             display_df.columns = ["ID", "ชื่อ-นามสกุล", "อายุ", "ข้อมูลจันทรคติ", "วันที่บันทึก"]
             st.dataframe(display_df, hide_index=True, use_container_width=True)
 
             st.markdown("---")
-            st.subheader("⚙️ จัดการข้อมูล และ เรียกดูแผ่นดวง")
+            st.subheader("⚙️ จัดการข้อมูล และ ดาวน์โหลด PDF ดวงชะตา")
             
             user_options = df['id'].astype(str) + " - " + df['name']
             selected_option = st.selectbox("เลือกลูกค้าที่ต้องการ", ["-- กรุณาเลือก --"] + user_options.tolist())
@@ -476,29 +501,49 @@ def main():
                 sel_id = int(selected_option.split(" - ")[0])
                 user_row = df[df['id'] == sel_id].iloc[0]
 
-                # --- สร้างส่วนแสดงผลแผ่นดวงชะตาทันทีที่เลือกชื่อ ---
-                with st.expander(f"👁️ ดูแผ่นดวงชะตาของคุณ {user_row['name']} (กดเพื่อเปิด/ปิด)", expanded=True):
-                    # ดึงข้อมูลจากฐานข้อมูลมาคำนวณใหม่
-                    e_d = int(user_row['e_day_num']) if pd.notna(user_row['e_day_num']) else 1
-                    e_m = int(user_row['e_month_num']) if pd.notna(user_row['e_month_num']) else 1
-                    e_y = int(user_row['e_year_num']) if pd.notna(user_row['e_year_num']) else 1
-                    u_age = int(user_row['age']) if pd.notna(user_row['age']) else 1
+                e_d = int(user_row['e_day_num']) if pd.notna(user_row['e_day_num']) else 1
+                e_m = int(user_row['e_month_num']) if pd.notna(user_row['e_month_num']) else 1
+                e_y = int(user_row['e_year_num']) if pd.notna(user_row['e_year_num']) else 1
+                u_age = int(user_row['age']) if pd.notna(user_row['age']) else 1
+                
+                s_y_ce = int(user_row['s_year_be']) - 543 if pd.notna(user_row['s_year_be']) else 2000
+                s_m = int(user_row['s_month']) if pd.notna(user_row['s_month']) else 1
+                s_d = int(user_row['s_day']) if pd.notna(user_row['s_day']) else 1
+                
+                try:
+                    db_solar_date = datetime.date(s_y_ce, s_m, s_d)
+                except:
+                    db_solar_date = datetime.date(s_y_ce, s_m, 1)
                     
-                    s_y_ce = int(user_row['s_year_be']) - 543 if pd.notna(user_row['s_year_be']) else 2000
-                    s_m = int(user_row['s_month']) if pd.notna(user_row['s_month']) else 1
-                    s_d = int(user_row['s_day']) if pd.notna(user_row['s_day']) else 1
-                    
-                    try:
-                        db_solar_date = datetime.date(s_y_ce, s_m, s_d)
-                    except:
-                        db_solar_date = datetime.date(s_y_ce, s_m, 1)
-                        
-                    db_chart_data, db_age_vals = calculate_7_base(e_d, e_m, e_y, db_solar_date)
+                solar_months_list = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"]
+                s_month_str = solar_months_list[s_m - 1]
+                dob_text_db = f"วันที่ {s_d} {s_month_str} พ.ศ. {user_row['s_year_be']}"
+
+                db_chart_data, db_age_vals = calculate_7_base(e_d, e_m, e_y, db_solar_date)
+
+                pdf_bytes_db = generate_pdf(
+                    user_row['name'], 
+                    dob_text_db, 
+                    user_row['thai_lunar_text'], 
+                    db_chart_data, 
+                    db_age_vals, 
+                    u_age, 
+                    e_m
+                )
+                
+                st.download_button(
+                    label=f"📥 ดาวน์โหลด PDF แผ่นดวงของ {user_row['name']}",
+                    data=pdf_bytes_db,
+                    file_name=f"Chart_{user_row['name']}.pdf",
+                    mime="application/pdf",
+                    key=f"dl_btn_{sel_id}"
+                )
+
+                with st.expander(f"👁️ ดูตัวอย่างแผ่นดวงชะตาของคุณ {user_row['name']}", expanded=True):
                     render_html_preview(db_chart_data, db_age_vals, u_age, e_m)
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 
-                # --- ฟอร์มแก้ไขและลบข้อมูล ---
                 new_name = st.text_input("อัปเดต ชื่อ-นามสกุล", user_row['name'])
                 new_age = st.number_input("อัปเดต อายุ", value=int(user_row['age']), min_value=1)
                 new_thai_text = st.text_input("อัปเดต ข้อมูลจันทรคติ", user_row['thai_lunar_text'])
