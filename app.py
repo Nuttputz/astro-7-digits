@@ -2,73 +2,67 @@ import streamlit as st
 import io
 import datetime
 import os
-import sqlite3
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 from reportlab.lib.pagesizes import A4
 
 # ==========================================
-# 0. ระบบจัดการฐานข้อมูลลูกค้า (Database CRUD)
+# 0. ระบบจัดการฐานข้อมูล (Google Sheets CRUD)
 # ==========================================
-def init_db():
-    conn = sqlite3.connect('astrology_users.db')
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            s_day INTEGER,
-            s_month INTEGER,
-            s_year_be INTEGER,
-            e_day_num INTEGER DEFAULT 1,
-            e_month_num INTEGER DEFAULT 1,
-            e_year_num INTEGER DEFAULT 1,
-            age INTEGER,
-            thai_lunar_text TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
+def get_all_users():
     try:
-        c.execute('ALTER TABLE users ADD COLUMN e_day_num INTEGER DEFAULT 1')
-        c.execute('ALTER TABLE users ADD COLUMN e_month_num INTEGER DEFAULT 1')
-        c.execute('ALTER TABLE users ADD COLUMN e_year_num INTEGER DEFAULT 1')
-    except sqlite3.OperationalError:
-        pass 
-        
-    conn.commit()
-    conn.close()
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(worksheet="Sheet1")
+        # กรองเฉพาะแถวที่มีข้อมูล id
+        if not df.empty and 'id' in df.columns:
+            df = df.dropna(subset=['id'])
+            df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
+            return df
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล: {e}")
+        return pd.DataFrame()
 
 def add_user(name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num, age, thai_lunar_text):
-    conn = sqlite3.connect('astrology_users.db')
-    c = conn.cursor()
-    c.execute('''INSERT INTO users 
-                 (name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num, age, thai_lunar_text) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-              (name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num, age, thai_lunar_text))
-    conn.commit()
-    conn.close()
-
-def get_all_users():
-    conn = sqlite3.connect('astrology_users.db')
-    df = pd.read_sql_query('SELECT * FROM users ORDER BY id DESC', conn)
-    conn.close()
-    return df
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = get_all_users()
+    
+    # คำนวณ ID ถัดไป
+    new_id = 1
+    if not df.empty and 'id' in df.columns:
+        new_id = int(df['id'].max()) + 1
+        
+    created_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    new_data = pd.DataFrame([{
+        "id": new_id, "name": name, "s_day": s_day, "s_month": s_month, "s_year_be": s_year_be,
+        "e_day_num": e_day_num, "e_month_num": e_month_num, "e_year_num": e_year_num,
+        "age": age, "thai_lunar_text": thai_lunar_text, "created_at": created_at
+    }])
+    
+    updated_df = pd.concat([df, new_data], ignore_index=True)
+    conn.update(worksheet="Sheet1", data=updated_df)
 
 def update_user(user_id, name, age, thai_lunar_text):
-    conn = sqlite3.connect('astrology_users.db')
-    c = conn.cursor()
-    c.execute('UPDATE users SET name=?, age=?, thai_lunar_text=? WHERE id=?', (name, age, thai_lunar_text, user_id))
-    conn.commit()
-    conn.close()
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = get_all_users()
+    if not df.empty:
+        idx = df[df['id'] == user_id].index
+        if len(idx) > 0:
+            df.loc[idx, 'name'] = name
+            df.loc[idx, 'age'] = age
+            df.loc[idx, 'thai_lunar_text'] = thai_lunar_text
+            conn.update(worksheet="Sheet1", data=df)
 
 def delete_user(user_id):
-    conn = sqlite3.connect('astrology_users.db')
-    c = conn.cursor()
-    c.execute('DELETE FROM users WHERE id=?', (user_id,))
-    conn.commit()
-    conn.close()
+    conn = st.connection("gsheets", type=GSheetsConnection)
+    df = get_all_users()
+    if not df.empty:
+        df = df[df['id'] != user_id]
+        conn.update(worksheet="Sheet1", data=df)
 
 # ==========================================
 # 1. ฟังก์ชันแปลงปฏิทินสากลเป็นจันทรคติไทย
@@ -139,7 +133,7 @@ def calculate_7_base(day_num, month_num, year_num, solar_date):
     return chart_data, age_vals
 
 # ==========================================
-# 3. ฟังก์ชันวาด PDF (จัด Layout นำดวงจรมาแทรก)
+# 3. ฟังก์ชันวาด PDF
 # ==========================================
 def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, month_num):
     buffer = io.BytesIO()
@@ -219,17 +213,18 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
 
-    # === 2. ตารางดวงจร (แทรกกลาง ระหว่างแถว 5 กับ 6) ===
+    # === 2. ตารางดวงจร (แทรกกลาง ระหว่างแถว 5 กับ 6 และ ชิดซ้าย) ===
+    pred_chart_x = 50 
     pred_title_y = 560
     pred_chart_y = 530
     
     c.setFont("THSarabun", 24)
-    c.drawCentredString(start_x + (col_width * 3.5), pred_title_y, f"ตอนนี้อายุ    {age} ปี")
+    c.drawCentredString(pred_chart_x + (col_width * 3.5), pred_title_y, f"ตอนนี้อายุ    {age} ปี")
 
     table_top = pred_chart_y + row_height
     table_bottom = table_top - 4 * row_height
-    table_left = start_x
-    table_right = start_x + 7 * col_width
+    table_left = pred_chart_x
+    table_right = pred_chart_x + 7 * col_width
     
     # เส้นกริด
     c.setStrokeColorRGB(0.85, 0.85, 0.85)
@@ -253,10 +248,10 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
         canvas.drawCentredString(x + col_width/2.0, y + 6, text)
 
     c.setFont("THSarabun", 22) 
-    for i, val in enumerate(seq1): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y, (0, 0, 1) if i == 0 else (0, 0, 0))
-    for i, val in enumerate(seq2): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y - row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
-    for i, val in enumerate(seq3): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y - 2 * row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
-    for i, val in enumerate(seq4): draw_centered_large(c, str(val), start_x + i * col_width, pred_chart_y - 3 * row_height, (0, 0, 0))
+    for i, val in enumerate(seq1): draw_centered_large(c, str(val), pred_chart_x + i * col_width, pred_chart_y, (0, 0, 1) if i == 0 else (0, 0, 0))
+    for i, val in enumerate(seq2): draw_centered_large(c, str(val), pred_chart_x + i * col_width, pred_chart_y - row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
+    for i, val in enumerate(seq3): draw_centered_large(c, str(val), pred_chart_x + i * col_width, pred_chart_y - 2 * row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
+    for i, val in enumerate(seq4): draw_centered_large(c, str(val), pred_chart_x + i * col_width, pred_chart_y - 3 * row_height, (0, 0, 0))
 
     # === 3. ตารางที่ 1 (ท่อนล่าง แถว 6 ถึง 12) ===
     start_y_part2 = 405
@@ -336,7 +331,7 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     .age-table td { border: 1px solid #ccc; width: 25px; height: 25px; text-align: center; font-size: 13px; background: #fff; color: #555; }
     .age-main { border: 1px solid #333 !important; color: blue !important; font-weight: bold; width: 32px !important; font-size: 16px !important; }
     
-    .pred-table { border-collapse: collapse; margin: 0 auto; background: #fff;}
+    .pred-table { border-collapse: collapse; background: #fff;}
     .pred-table td { border: 1px solid #e0e0e0; padding: 6px 14px; text-align: center; font-size: 22px; color: #000; width: 45px; height: 40px;}
     .pred-blue { color: blue !important; }
     .pred-border-b td { border-bottom: 3px solid #000 !important; } 
@@ -384,8 +379,8 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
     
-    # --- 2. ตารางดวงจร (แทรกกลาง) ---
-    html_str += f"<div><div style='text-align: center; margin-bottom: 10px; font-size: 18px; font-weight: bold; color: #000;'>ตอนนี้อายุ {age} ปี</div><table class='pred-table'>"
+    # --- 2. ตารางดวงจร (แทรกกลาง และ ชิดซ้าย) ---
+    html_str += f"<div style='align-self: flex-start; padding-left: 20px;'><div style='text-align: center; margin-bottom: 10px; font-size: 18px; font-weight: bold; color: #000;'>ตอนนี้อายุ {age} ปี</div><table class='pred-table' style='margin: 0;'>"
     for r_idx, seq in enumerate([seq1, seq2, seq3, seq4]):
         row_class = "pred-border-b" if r_idx == 1 else ""
         html_str += f"<tr class='{row_class}'>"
@@ -425,7 +420,6 @@ def render_html_preview(chart_data, age_vals, age, month_num):
 # 5. ส่วนแสดงผลหน้าเว็บ (Streamlit UI)
 # ==========================================
 def main():
-    init_db() 
     st.set_page_config(page_title="โปรแกรมผูกดวงเลข 7 ตัว", layout="centered")
     
     st.title("🔮 ระบบโหราศาสตร์เลข 7 ตัว")
