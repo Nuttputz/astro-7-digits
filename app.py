@@ -15,18 +15,14 @@ from reportlab.lib.pagesizes import A4
 def get_all_users():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # แก้ไขตรงนี้: ใส่ ttl=0 เพื่อบังคับให้ดึงข้อมูลใหม่เสมอ ไม่จำแคช
         df = conn.read(worksheet="Sheet1", ttl=0) 
         
         if not df.empty and 'id' in df.columns:
-            # ตัดแถวที่ id เป็นค่าว่างออก (ป้องกัน Google Sheets คืนค่าแถวว่างเปล่ามาให้)
             df = df.dropna(subset=['id'])
             df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
             
-            # กรองเอาเฉพาะข้อมูลที่มีค่า ID มากกว่า 0
             df = df[df['id'] > 0]
             
-            # แปลงข้อมูลบางคอลัมน์ไม่ให้เป็นทศนิยม
             cols_to_int = ['s_day', 's_month', 's_year_be', 'e_day_num', 'e_month_num', 'e_year_num', 'age']
             for col in cols_to_int:
                 if col in df.columns:
@@ -41,7 +37,6 @@ def add_user(name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = get_all_users()
     
-    # คำนวณ ID ถัดไป
     new_id = 1
     if not df.empty and 'id' in df.columns:
         new_id = int(df['id'].max()) + 1
@@ -55,9 +50,7 @@ def add_user(name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num
     }])
     
     updated_df = pd.concat([df, new_data], ignore_index=True)
-    # อัปเดตกลับไปที่ Google Sheets
     conn.update(worksheet="Sheet1", data=updated_df)
-    # ล้างแคชทั้งหมดหลังบันทึก
     st.cache_data.clear()
 
 def update_user(user_id, name, age, thai_lunar_text):
@@ -173,16 +166,12 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     row_height = 25
     start_x = 140 
     
-    # === 1. ตารางที่ 1 (เฉพาะท่อนบน แถว 1 ถึง 5) ===
     start_y_part1 = 710
-    
     for row_idx in range(5):
         row = chart_data[row_idx]
         y_pos = start_y_part1 - (row_idx * row_height)
-        
         for col_idx, value in enumerate(row):
             x = start_x + (col_idx * col_width)
-            
             if col_idx == 3:
                 c.setFillColorRGB(0.85, 0.93, 1.0) 
                 c.rect(x, y_pos, col_width, row_height, stroke=1, fill=1)
@@ -198,18 +187,15 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
             if row_idx == 0: small_num = 1 + col_idx
             elif row_idx == 1: small_num = 8 + col_idx
             elif row_idx == 2: small_num = 15 + col_idx
-                
             if small_num is not None:
                 c.setFont("THSarabun", 12) 
                 c.drawString(x + col_width - 13, y_pos + 2, str(small_num))
 
-    # เส้นหนาระหว่างแถว 3 และ 4 ของตารางแรก
     c.setLineWidth(3)
     thick_line_y = start_y_part1 - (2 * row_height) 
     c.line(start_x, thick_line_y, start_x + (7 * col_width), thick_line_y)
     c.setLineWidth(1)
 
-    # --- คำนวณตัวเลขสำหรับตารางดวงจร ---
     start1 = 1
     if 1 <= age <= 7: start1 = chart_data[0][age - 1]
     elif 8 <= age <= 14: start1 = chart_data[1][age - 8]
@@ -229,7 +215,6 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
 
-    # === 2. ตารางดวงจร (แทรกกลาง ระหว่างแถว 5 กับ 6 และ ชิดซ้าย) ===
     pred_chart_x = 50 
     pred_title_y = 560
     pred_chart_y = 530
@@ -242,7 +227,6 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     table_left = pred_chart_x
     table_right = pred_chart_x + 7 * col_width
     
-    # เส้นกริด
     c.setStrokeColorRGB(0.85, 0.85, 0.85)
     c.setLineWidth(1)
     for i in range(5):
@@ -252,7 +236,6 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
         x = table_left + i * col_width
         c.line(x, table_top, x, table_bottom)
 
-    # เส้นหนาสีดำ แบ่งระหว่างแถว 2 (เลขดวง) และ แถว 3 (เดือน) ของดวงจร
     c.setStrokeColorRGB(0, 0, 0)
     c.setLineWidth(3)
     thick_y = table_top - 2 * row_height
@@ -269,29 +252,22 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
     for i, val in enumerate(seq3): draw_centered_large(c, str(val), pred_chart_x + i * col_width, pred_chart_y - 2 * row_height, (0, 0, 1) if i == 0 else (0, 0, 0))
     for i, val in enumerate(seq4): draw_centered_large(c, str(val), pred_chart_x + i * col_width, pred_chart_y - 3 * row_height, (0, 0, 0))
 
-    # === 3. ตารางที่ 1 (ท่อนล่าง แถว 6 ถึง 12) ===
     start_y_part2 = 405
     for row_idx in range(5, len(chart_data)):
         row = chart_data[row_idx]
         display_idx = row_idx - 5
         y_pos = start_y_part2 - (display_idx * row_height)
-        
         for col_idx, value in enumerate(row):
             x = start_x + (col_idx * col_width)
-            
             c.setStrokeColorRGB(0, 0, 0)
             c.rect(x, y_pos, col_width, row_height)
-            
             c.setFillColorRGB(0, 0, 0) 
             c.setFont("THSarabun", 22) 
             c.drawCentredString(x + col_width / 2.0, y_pos + 6, str(value))
-            
-            # เลขดวงเล็กมุมขวาล่าง
             small_num = 22 + (display_idx * 7) + col_idx
             c.setFont("THSarabun", 12) 
             c.drawString(x + col_width - 13, y_pos + 2, str(small_num))
 
-    # === 4. ตารางอายุ (อยู่ล่างสุด) ===
     age_start_x = 214
     age_start_y = 205
     age_row_height = 16
@@ -305,7 +281,6 @@ def generate_pdf(name, dob_text, thai_lunar_date, chart_data, age_vals, age, mon
         c.setFillColorRGB(0, 0, 1)
         c.setFont("THSarabun", 20) 
         c.drawCentredString(age_start_x + main_col_width / 2.0, y + 4, str(age_vals[i]))
-        
         for j in range(6):
             sx = age_start_x + main_col_width + (j * small_col_width)
             c.setStrokeColorRGB(0.7, 0.7, 0.7)
@@ -356,27 +331,22 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     <div class="tables-wrapper">
     """
     
-    # --- 1. ตารางที่ 1 (ท่อนบน แถว 1 ถึง 5) ---
     html_str += "<table class='astro-table'>"
     for row_idx in range(5):
         row = chart_data[row_idx]
         tr_style = " style='border-bottom: 3px solid #000;'" if row_idx == 2 else ""
         html_str += f"<tr{tr_style}>"
-        
         for col_idx, val in enumerate(row):
             small_num = ""
             if row_idx == 0: small_num = 1 + col_idx
             elif row_idx == 1: small_num = 8 + col_idx
             elif row_idx == 2: small_num = 15 + col_idx
-            
             highlight_class = " astro-col-highlight" if col_idx == 3 else ""
             td_style = " style='border-bottom: 3px solid #000;'" if row_idx == 2 else ""
-            
             html_str += f"<td class='{highlight_class.strip()}'{td_style}>{val}<span class='astro-small'>{small_num if small_num else ''}</span></td>"
         html_str += "</tr>"
     html_str += "</table>"
     
-    # --- คำนวณดวงจร ---
     start1 = 1
     if 1 <= age <= 7: start1 = chart_data[0][age - 1]
     elif 8 <= age <= 14: start1 = chart_data[1][age - 8]
@@ -395,7 +365,6 @@ def render_html_preview(chart_data, age_vals, age, month_num):
     seq3 = seq3_4[0:7]
     seq4 = seq3_4[7:12]
     
-    # --- 2. ตารางดวงจร (แทรกกลาง และ ชิดซ้าย) ---
     html_str += f"<div style='align-self: flex-start; padding-left: 20px;'><div style='text-align: center; margin-bottom: 10px; font-size: 18px; font-weight: bold; color: #000;'>ตอนนี้อายุ {age} ปี</div><table class='pred-table' style='margin: 0;'>"
     for r_idx, seq in enumerate([seq1, seq2, seq3, seq4]):
         row_class = "pred-border-b" if r_idx == 1 else ""
@@ -408,19 +377,16 @@ def render_html_preview(chart_data, age_vals, age, month_num):
         html_str += "</tr>"
     html_str += "</table></div>"
     
-    # --- 3. ตารางที่ 1 (ท่อนล่าง แถว 6 ถึง 12) ---
     html_str += "<table class='astro-table'>"
     for row_idx in range(5, len(chart_data)):
         row = chart_data[row_idx]
         html_str += "<tr>"
-        
         for col_idx, val in enumerate(row):
             small_num = 22 + ((row_idx - 5) * 7) + col_idx
             html_str += f"<td>{val}<span class='astro-small'>{small_num}</span></td>"
         html_str += "</tr>"
     html_str += "</table>"
     
-    # --- 4. ตารางอายุ (อยู่ล่างสุด) ---
     html_str += "<div><table class='age-table'>"
     for i in range(12):
         html_str += f"<tr><td class='age-main'>{age_vals[i]}</td>"
@@ -553,11 +519,30 @@ def main():
             st.markdown("---")
             st.subheader("⚙️ จัดการข้อมูล และ ดาวน์โหลด PDF ดวงชะตา")
             
-            user_options = df['id'].astype(str) + " - " + df['name']
-            selected_option = st.selectbox("เลือกลูกค้าที่ต้องการ", ["-- กรุณาเลือก --"] + user_options.tolist())
+            # --- เพิ่มช่องค้นหาสำหรับมือถือ/ไอแพดโดยเฉพาะ ---
+            search_query = st.text_input("🔍 พิมพ์ค้นหาชื่อลูกค้า (พิมพ์บางส่วนเพื่อกรองรายชื่อให้ลดลง)", placeholder="เช่น นัด")
+            
+            if search_query:
+                # กรอง DataFrame ตามคำค้นหา (ไม่สนตัวพิมพ์เล็ก-ใหญ่)
+                filtered_df = df[df['name'].str.contains(search_query, case=False, na=False)]
+            else:
+                filtered_df = df
+            
+            if filtered_df.empty:
+                st.warning("⚠️ ไม่พบชื่อลูกค้าที่ค้นหา")
+                user_options = []
+            else:
+                user_options = filtered_df['id'].astype(str) + " - " + filtered_df['name']
+            
+            # เปลี่ยน Dropdown ให้โชว์เฉพาะข้อมูลที่ผ่านการกรองแล้ว
+            selected_option = st.selectbox(
+                "เลือกลูกค้าที่ต้องการดึงข้อมูล", 
+                ["-- กรุณาเลือก --"] + (user_options.tolist() if not filtered_df.empty else [])
+            )
 
             if selected_option != "-- กรุณาเลือก --":
                 sel_id = int(selected_option.split(" - ")[0])
+                # ดึงข้อมูลจาก df หลักตาม ID
                 user_row = df[df['id'] == sel_id].iloc[0]
 
                 e_d = int(user_row['e_day_num']) if pd.notna(user_row['e_day_num']) else 1
