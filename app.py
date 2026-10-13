@@ -15,15 +15,26 @@ from reportlab.lib.pagesizes import A4
 def get_all_users():
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="Sheet1")
-        # กรองเฉพาะแถวที่มีข้อมูล id
+        # แก้ไขตรงนี้: ใส่ ttl=0 เพื่อบังคับให้ดึงข้อมูลใหม่เสมอ ไม่จำแคช
+        df = conn.read(worksheet="Sheet1", ttl=0) 
+        
         if not df.empty and 'id' in df.columns:
+            # ตัดแถวที่ id เป็นค่าว่างออก (ป้องกัน Google Sheets คืนค่าแถวว่างเปล่ามาให้)
             df = df.dropna(subset=['id'])
             df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
+            
+            # กรองเอาเฉพาะข้อมูลที่มีค่า ID มากกว่า 0
+            df = df[df['id'] > 0]
+            
+            # แปลงข้อมูลบางคอลัมน์ไม่ให้เป็นทศนิยม
+            cols_to_int = ['s_day', 's_month', 's_year_be', 'e_day_num', 'e_month_num', 'e_year_num', 'age']
+            for col in cols_to_int:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(1).astype(int)
             return df
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล: {e}")
+        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {e}")
         return pd.DataFrame()
 
 def add_user(name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num, age, thai_lunar_text):
@@ -44,7 +55,10 @@ def add_user(name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num
     }])
     
     updated_df = pd.concat([df, new_data], ignore_index=True)
+    # อัปเดตกลับไปที่ Google Sheets
     conn.update(worksheet="Sheet1", data=updated_df)
+    # ล้างแคชทั้งหมดหลังบันทึก
+    st.cache_data.clear()
 
 def update_user(user_id, name, age, thai_lunar_text):
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -56,6 +70,7 @@ def update_user(user_id, name, age, thai_lunar_text):
             df.loc[idx, 'age'] = age
             df.loc[idx, 'thai_lunar_text'] = thai_lunar_text
             conn.update(worksheet="Sheet1", data=df)
+            st.cache_data.clear()
 
 def delete_user(user_id):
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -63,6 +78,7 @@ def delete_user(user_id):
     if not df.empty:
         df = df[df['id'] != user_id]
         conn.update(worksheet="Sheet1", data=df)
+        st.cache_data.clear()
 
 # ==========================================
 # 1. ฟังก์ชันแปลงปฏิทินสากลเป็นจันทรคติไทย
@@ -496,6 +512,7 @@ def main():
                 if save_to_db:
                     add_user(name, s_day, s_month, s_year_be, e_day_num, e_month_num, e_year_num, age, display_thai_text)
                     st.toast(f"บันทึกข้อมูลคุณ {name} ลงฐานข้อมูลเรียบร้อยแล้ว!")
+                    st.cache_data.clear()
 
                 chart_data, age_vals = calculate_7_base(e_day_num, e_month_num, e_year_num, solar_date)
                 st.success(f"✅ ผูกดวงสำหรับคุณ {name} สำเร็จแล้ว!")
@@ -516,7 +533,14 @@ def main():
 
     # ---------------- TAB 2: ฐานข้อมูลลูกค้า ----------------
     with tab2:
-        st.subheader("🗂️ รายชื่อลูกค้าทั้งหมดในระบบ")
+        col_title, col_refresh = st.columns([0.8, 0.2])
+        with col_title:
+            st.subheader("🗂️ รายชื่อลูกค้าทั้งหมดในระบบ")
+        with col_refresh:
+            if st.button("🔄 รีเฟรช"):
+                st.cache_data.clear()
+                st.rerun()
+                
         df = get_all_users()
         
         if df.empty:
